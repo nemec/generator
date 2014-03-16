@@ -117,7 +117,7 @@ namespace Generator
                     var propInfo = m.Member as PropertyInfo;
                     if (propInfo != null)
                     {
-                        propInfo.SetValue(_setterInstance, _newValue);
+                        propInfo.SetValue(_setterInstance, _newValue, null);
                         return result;
                     }
                     var fieldInfo = m.Member as FieldInfo;
@@ -133,7 +133,9 @@ namespace Generator
                     var propInfo = m.Member as PropertyInfo;
                     if (propInfo != null)
                     {
-                        _setterInstance = propInfo.GetValue(_setterInstance);
+                        _setterInstance = propInfo.GetValue(
+                            _setterInstance, BindingFlags.Default, 
+                            null, null, null);
                         return result;
                     }
                     var fieldInfo = m.Member as FieldInfo;
