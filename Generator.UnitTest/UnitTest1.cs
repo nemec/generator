@@ -149,7 +149,7 @@ namespace Generator.UnitTest
         public IEnumerable<IYield<int, string>> WithWellDefinedTypes()
         {
             var value = 0;
-            yield return Gen.Yield(() => value);
+            yield return Gen.Yield<int, string>(null, () => value);
             yield return Gen<int>.Yield(value.ToString());
         }
 

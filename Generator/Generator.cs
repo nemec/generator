@@ -12,10 +12,13 @@ namespace Generator
 
         private IYield _lastValue;
 
+        private bool _exhausted;
+
         internal Generator(IEnumerator<IYield> enm)
         {
             _enum = enm;
             _lastValue = null;
+            _exhausted = false;
         }
 
         public TOut Next<TOut>()
@@ -36,7 +39,7 @@ namespace Generator
         public TOut Send<TIn, TOut>(TIn obj)
         {
             SendNext(obj);
-            return (TOut)_lastValue.Value;
+            return (TOut)_enum.Current.Value;
         }
 
         public void Send<TIn>(TIn obj)
@@ -48,7 +51,7 @@ namespace Generator
         {
             if (SendNext(obj))
             {
-                response = (TOut) _lastValue.Value;
+                response = (TOut)_enum.Current.Value;
                 return true;
             }
             response = default(TOut);
@@ -57,24 +60,45 @@ namespace Generator
 
         private bool SendNext<T>(T obj)
         {
-            if (_lastValue == null && !ReferenceEquals(obj, null))
+            if (_exhausted)
+            {
+                return false;
+            }
+            else if (_lastValue == null && !ReferenceEquals(obj, null))
             {
                 /*throw new InvalidOperationException(
                     "Cannot send value to uninitialized generator. " +
                     "Call MoveNext instead to advance to the first breakpoint.");*/
-                MoveNext();
+                //MoveNext();
+                _enum.MoveNext();
             }
 
             _lastValue = _enum.Current;
 
             // Do reflection magic to set value
-            var continuation = _lastValue as Yield<T, object>;
-            if (continuation != null && continuation.Setter != null)
+            //var continuation = _lastValue as Yield<T, object>;
+            if (_lastValue != null)
             {
-                GetterToSetterExpressionVisitor.VisitAndSet(obj, continuation.Setter);
+                var genericOut = _lastValue.GetType().GetGenericArguments()[1];
+                var genericIn = typeof(T);
+                if (ReferenceEquals(obj, null))
+                {
+                    // Null can cast to anything
+                    genericIn = _lastValue.GetType().GetGenericArguments()[0];
+                }
+                var yield = typeof(Yield<,>).MakeGenericType(genericIn, genericOut);
+                var setter = (Expression)yield.GetProperty("Setter").GetValue(_lastValue, null);
+                if (setter != null/*continuation != null && continuation.Setter != null*/)
+                {
+                    GetterToSetterExpressionVisitor.VisitAndSet(obj, setter);
+                }
             }
 
-            return _enum.MoveNext();
+            if(!_enum.MoveNext())
+            {
+                _exhausted = true;
+            }
+            return true;
         }
 
         public object Current
