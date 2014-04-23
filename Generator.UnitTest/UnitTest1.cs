@@ -132,8 +132,8 @@ namespace Generator.UnitTest
 
         public IEnumerable<IYield> WithStaticProperty()
         {
-            yield return Gen.Yield(() => _staticField);
-            yield return Gen.Yield(_staticField);
+            yield return Gen.Yield(() => StaticProperty);
+            yield return Gen.Yield(StaticProperty);
         }
 
 
