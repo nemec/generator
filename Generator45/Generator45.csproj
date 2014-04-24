@@ -43,6 +43,7 @@
     <Compile Include="IYield.cs" />
     <Compile Include="IYieldAwaiter.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Yield.cs" />
     <Compile Include="YieldAwaiter.cs" />
     <Compile Include="YieldAwaiterBase.cs" />
     <Compile Include="YieldAwaiterWellDefined.cs" />

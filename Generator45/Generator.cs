@@ -11,24 +11,26 @@ namespace GeneratorAsync
         }
     }
 
-    public class Generator : IYield, IDisposable
+    public class Generator : IDisposable
     {
-        private readonly Task _task;
+        internal IYieldAwaiter Awaiter { get; set; }
 
-        private IYieldAwaiter _awaiter;
+        private readonly IYield _yielder;
 
         public Generator(Func<IYield, Task> meth)
         {
-            if (meth != null)
+            if (meth == null)
             {
-                _task = meth(this);
+                throw new ArgumentNullException("meth");
             }
+            _yielder = new Yielder(this);
+            var task = meth(_yielder);
         }
 
         public TOut Next<TOut>()
         {
-            var objOut = _awaiter.ObjOut;
-            _awaiter.MoveNext();
+            var objOut = Awaiter.ObjOut;
+            Awaiter.MoveNext();
 
             var fromType = objOut.GetType();
             var toType = typeof(TOut);
@@ -44,14 +46,14 @@ namespace GeneratorAsync
 
         public bool Send<T>(T obj)
         {
-            var ret = _awaiter.Send(obj);
+            var ret = Awaiter.Send(obj);
             return ret;
         }
 
         public TOut Send<TIn, TOut>(TIn obj)
         {
-            var objOut = _awaiter.ObjOut;
-            var ret = _awaiter.Send(obj);
+            var objOut = Awaiter.ObjOut;
+            var ret = Awaiter.Send(obj);
 
             var fromType = objOut.GetType();
             var toType = typeof(TOut);
@@ -65,78 +67,52 @@ namespace GeneratorAsync
             return (TOut)objOut;
         }
 
-        YieldAwaiter<T> IYield.Yield<T>(T obj)
-        {
-            var awaiter = new YieldAwaiter<T>(obj);
-            _awaiter = awaiter;
-            return awaiter;
-        }
-
-        YieldAwaiter<object> IYield.Yield()
-        {
-            var awaiter = new YieldAwaiter<object>(null);
-            _awaiter = awaiter;
-            return awaiter;
-        }
-
         public void Dispose()
         {
-            if (_awaiter != null)
+            if (Awaiter != null)
             {
-                _awaiter.MoveNext();
-                _awaiter.Dispose();
+                Awaiter.MoveNext();
+                Awaiter.Dispose();
             }
         }
     }
 
-    public class Generator<TIn, TOut> : IYield<TIn, TOut>, IDisposable
+    public class Generator<TIn, TOut> : IDisposable
     {
-        private readonly Task _task;
+        internal IYieldAwaiter<TIn, TOut> Awaiter { get; set; }
 
-        private IYieldAwaiter<TIn, TOut> _awaiter;
+        private readonly IYield<TIn, TOut> _yielder;
 
         public Generator(Func<IYield<TIn, TOut>, Task> meth)
         {
-            if (meth != null)
+            if (meth == null)
             {
-                _task = meth(this);
+                throw new ArgumentNullException("meth");
             }
+            _yielder = new Yielder<TIn, TOut>(this);
+            meth(_yielder);
         }
 
         public TOut Next()
         {
-            var objOut = _awaiter.ObjOut;
-            _awaiter.MoveNext();
+            var objOut = Awaiter.ObjOut;
+            Awaiter.MoveNext();
             return objOut;
         }
 
         public TOut Send(TIn obj)
         {
-            var objOut = _awaiter.ObjOut;
-            var ret = _awaiter.Send(obj);
+            var objOut = Awaiter.ObjOut;
+            var ret = Awaiter.Send(obj);
             return objOut;
-        }
-
-        YieldAwaiterWellDefined<TIn, TOut> IYield<TIn, TOut>.Yield(TOut obj)
-        {
-            var awaiter = new YieldAwaiterWellDefined<TIn, TOut>(obj);
-            _awaiter = awaiter;
-            return awaiter;
-        }
-
-        YieldAwaiterWellDefined<TIn, TOut> IYield<TIn, TOut>.Yield()
-        {
-            var awaiter = new YieldAwaiterWellDefined<TIn, TOut>(default(TOut));
-            _awaiter = awaiter;
-            return awaiter;
         }
 
         public void Dispose()
         {
-            if (_awaiter != null)
+            if (Awaiter != null)
             {
-                _awaiter.MoveNext();
-                _awaiter.Dispose();
+                Awaiter.MoveNext();
+                Awaiter.Dispose();
             }
         }
     }
