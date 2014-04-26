@@ -1,27 +1,22 @@
-﻿using System;
-using System.Linq.Expressions;
+﻿
+using System;
 
-namespace Generator
+namespace GeneratorAsync
 {
+    /// <summary>
+    /// Allows a 
+    /// </summary>
     public interface IYield
     {
-        object Value { get; }
+        YieldAwaiter<T> Yield<T>(T obj);
+
+        YieldAwaiter<object> Yield();
     }
 
-    public interface IYield<in TIn, in TOut> : IYield
+    public interface IYield<TIn, TOut>
     {
-    }
+        YieldAwaiterWellDefined<TIn, TOut> Yield(TOut obj);
 
-    public class Yield<TIn, TOut> : IYield<TIn, TOut>
-    {
-        public Yield(TOut value, Expression<Func<TIn>> setter)
-        {
-            Value = value;
-            Setter = setter;
-        }
-
-        public object Value { get; private set; }
-
-        public Expression<Func<TIn>> Setter { get; private set; } 
+        YieldAwaiterWellDefined<TIn, TOut> Yield();
     }
 }

@@ -11,6 +11,8 @@ namespace GeneratorAsync
 
         protected TIn _objIn;
 
+        private bool _completed;
+
 
         // resume after await, called upon external event
         public bool MoveNext()
@@ -29,7 +31,7 @@ namespace GeneratorAsync
             var continuation = _continuation;
             _continuation = null;
             continuation();
-            return _continuation != null;
+            return true;
         }
 
         public bool IsCompleted

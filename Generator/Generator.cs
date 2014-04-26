@@ -1,263 +1,258 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Linq.Expressions;
-using System.Reflection;
+using System.Threading.Tasks;
 
-namespace Generator
+namespace GeneratorAsync
 {
-    public class Generator : IGenerator
+    /// <summary>
+    /// A generator that takes a single state argument in the method
+    /// "constructor".
+    /// </summary>
+    /// <typeparam name="TState"></typeparam>
+    public class Generator<TState> : Generator
     {
-        private readonly IEnumerator<IYield> _enum;
-
-        private IYield _lastValue;
-
-        private bool _exhausted;
-
-        internal Generator(IEnumerator<IYield> enm)
+        /// <summary>
+        /// A generator that takes a single state argument in the method
+        /// "constructor".
+        /// </summary>
+        /// <param name="meth"></param>
+        /// <param name="state"></param>
+        public Generator(Func<IYield, TState, Task> meth, TState state)
+            : base(y => meth(y, state))
         {
-            _enum = enm;
-            _lastValue = null;
-            _exhausted = false;
+        }
+    }
+
+    public class Generator : IGenerator, IDisposable
+    {
+        internal IYieldAwaiter Awaiter { get; set; }
+
+        private readonly IYield _yielder;
+
+        private bool _generatorExhausted;
+
+        public Generator(Func<IYield, Task> meth)
+        {
+            if (meth == null)
+            {
+                throw new ArgumentNullException("meth");
+            }
+            _yielder = new Yielder(this);
+            _generatorExhausted = false;
+            var task = meth(_yielder);
         }
 
         public TOut Next<TOut>()
         {
-            //MoveNext();
-            if (!MoveNext())
+            var objOut = Awaiter.ObjOut;
+            if(!Awaiter.MoveNext())
             {
-                throw new Exception();
+                if (_generatorExhausted)
+                {
+                    //throw new GeneratorExhaustedException();
+                }
+                _generatorExhausted = true;
             }
-            return (TOut) _enum.Current.Value;
+
+            var fromType = objOut.GetType();
+            var toType = typeof(TOut);
+            if (!toType.IsAssignableFrom(fromType))
+            {
+                throw new ArgumentException(String.Format(
+                    "Object '{0}' of type {1} cannot be assigned to {2}",
+                    objOut, fromType, toType));
+            }
+
+            return (TOut)objOut;
         }
 
-        public bool MoveNext()
+        public bool TryNext<TOut>(out TOut result)
         {
-            return SendNext((Object)null);
+            var objOut = Awaiter.ObjOut;
+            var fromType = objOut.GetType();
+            var toType = typeof(TOut);
+
+            if(Awaiter.MoveNext() && toType.IsAssignableFrom(fromType))
+            {
+                result = (TOut)objOut;
+                return true;
+            }
+            result = default(TOut);
+            return false;
         }
 
         public TOut Send<TIn, TOut>(TIn obj)
         {
-            SendNext(obj);
-            return (TOut)_enum.Current.Value;
+            var objOut = Awaiter.ObjOut;
+            if (!Awaiter.Send(obj))
+            {
+                if (_generatorExhausted)
+                {
+                    //throw new GeneratorExhaustedException();
+                }
+                _generatorExhausted = true;
+            }
+
+            var fromType = objOut.GetType();
+            var toType = typeof(TOut);
+            if (!toType.IsAssignableFrom(fromType))
+            {
+                throw new ArgumentException(String.Format(
+                    "Object '{0}' of type {1} cannot be assigned to {2}",
+                    objOut, fromType, toType));
+            }
+
+            return (TOut)objOut;
         }
 
         public void Send<TIn>(TIn obj)
         {
-            SendNext(obj);
+            if (!Awaiter.Send(obj))
+            {
+                if (_generatorExhausted)
+                {
+                    throw new GeneratorExhaustedException();
+                }
+                _generatorExhausted = true;
+            }
         }
 
-        public bool TrySend<TIn, TOut>(TIn obj, out TOut response)
+        public bool TrySend<T>(T obj)
         {
-            if (SendNext(obj))
+            var ret = Awaiter.Send(obj);
+            return ret;
+        }
+
+        public bool TrySend<TIn, TOut>(TIn obj, out TOut result)
+        {
+            var objOut = Awaiter.ObjOut;
+
+            var fromType = objOut.GetType();
+            var toType = typeof(TOut);
+
+            if (Awaiter.Send(obj) && toType.IsAssignableFrom(fromType))
             {
-                response = (TOut)_enum.Current.Value;
+                result = (TOut)objOut;
                 return true;
             }
-            response = default(TOut);
+            result = default(TOut);
             return false;
         }
 
-        private bool SendNext<T>(T obj)
+        /// <summary>
+        /// Convert the generator into an Enumerable of a single type.
+        /// You are unable to send values into the generator when it's
+        /// an Enumerable, but you gain the ability to use LINQ.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <returns></returns>
+        public IEnumerable<T> AsEnumerable<T>()
         {
-            if (_exhausted)
+            T result;
+            while (TryNext(out result))
             {
-                return false;
+                yield return result;
             }
-            else if (_lastValue == null && !ReferenceEquals(obj, null))
-            {
-                /*throw new InvalidOperationException(
-                    "Cannot send value to uninitialized generator. " +
-                    "Call MoveNext instead to advance to the first breakpoint.");*/
-                //MoveNext();
-                _enum.MoveNext();
-            }
-
-            _lastValue = _enum.Current;
-
-            // Do reflection magic to set value
-            //var continuation = _lastValue as Yield<T, object>;
-            if (_lastValue != null)
-            {
-                var genericOut = _lastValue.GetType().GetGenericArguments()[1];
-                var genericIn = typeof(T);
-                if (ReferenceEquals(obj, null))
-                {
-                    // Null can cast to anything
-                    genericIn = _lastValue.GetType().GetGenericArguments()[0];
-                }
-                var yield = typeof(Yield<,>).MakeGenericType(genericIn, genericOut);
-                var setter = (Expression)yield.GetProperty("Setter").GetValue(_lastValue, null);
-                if (setter != null/*continuation != null && continuation.Setter != null*/)
-                {
-                    GetterToSetterExpressionVisitor.VisitAndSet(obj, setter);
-                }
-            }
-
-            if(!_enum.MoveNext())
-            {
-                _exhausted = true;
-            }
-            return true;
         }
 
-        public object Current
+        public void Dispose()
         {
-            get { return _enum.Current; }
-        }
-
-        public void Reset()
-        {
-            throw new InvalidOperationException();
-        }
-
-        private class GetterToSetterExpressionVisitor : ExpressionVisitor
-        {
-            private GetterToSetterExpressionVisitor(object newValue)
+            if (Awaiter != null)
             {
-                _newValue = newValue;
-            }
-
-            private readonly object _newValue;
-
-            private object _setterInstance;
-
-            private int _memberAccessDepth;
-
-            public static void VisitAndSet(object newValue, Expression setter)
-            {
-                var visitor = new GetterToSetterExpressionVisitor(newValue);
-                visitor.Visit(setter);
-            }
-
-            protected override Expression VisitMemberAccess(MemberExpression m)
-            {
-                _memberAccessDepth++;
-                var result = base.VisitMemberAccess(m);
-                _memberAccessDepth--;
-
-                if (_memberAccessDepth == 0)  // Set the new value
-                {
-                    var propInfo = m.Member as PropertyInfo;
-                    if (propInfo != null)
-                    {
-                        propInfo.SetValue(_setterInstance, _newValue, null);
-                        return result;
-                    }
-                    var fieldInfo = m.Member as FieldInfo;
-                    if (fieldInfo != null)
-                    {
-                        fieldInfo.SetValue(_setterInstance, _newValue);
-                        return result;
-                    }
-                    throw new NotImplementedException();
-                }
-                else  // Traverse nested property/field access
-                {
-                    var propInfo = m.Member as PropertyInfo;
-                    if (propInfo != null)
-                    {
-                        _setterInstance = propInfo.GetValue(
-                            _setterInstance, BindingFlags.Default, 
-                            null, null, null);
-                        return result;
-                    }
-                    var fieldInfo = m.Member as FieldInfo;
-                    if (fieldInfo != null)
-                    {
-                        _setterInstance = fieldInfo.GetValue(_setterInstance);
-                        return result;
-                    }
-                    throw new NotImplementedException();
-                }
-            }
-
-            protected override Expression VisitConstant(ConstantExpression c)
-            {
-                var result = base.VisitConstant(c);
-                _setterInstance = c.Value;
-                return result;
-            }
-
-            protected override Expression VisitMethodCall(MethodCallExpression m)
-            {
-                _memberAccessDepth++;
-                var result = base.VisitMethodCall(m);
-                _memberAccessDepth--;
-
-                if (_memberAccessDepth == 0 && m.NodeType == ExpressionType.Call)
-                {
-                    var getter = m.Method;
-
-                    // Special case for Indexers. Method must be a "special name"
-                    // and begin with "get_".
-                    if (!getter.Name.StartsWith("get_") && getter.IsSpecialName)
-                    {
-                        throw new NotImplementedException(
-                            "The only method call expressions allowed are indexer-gets.");
-                    }
-
-                    var setMethodName = "set_" + getter.Name.Substring(4);
-
-                    var declaringType = getter.DeclaringType;
-                    if (declaringType == null)
-                    {
-                        throw new InvalidOperationException(String.Format(
-                            "Cannot find declaring type for getter {0}.",
-                            getter.Name));
-                    }
-
-                    var setter = declaringType.GetMethod(setMethodName);
-                    if (setter == null || !setter.IsSpecialName)
-                    {
-                        throw new InvalidOperationException(String.Format(
-                            "Cannot find setter for getter {0}.",
-                            getter.Name));
-                    }
-                    var indexArgExpr = Expression.Lambda(m.Arguments[0]);
-                    var indexArg = ((Func<object>)indexArgExpr.Compile())();
-
-                    
-
-                    setter.Invoke(_setterInstance, new[] {indexArg, _newValue});
-                    return result;
-                }
-                throw new NotImplementedException();
-            }
-
-            // Called by method calls with arguments. We don't really care to visit those.
-            protected override ReadOnlyCollection<Expression> VisitExpressionList(ReadOnlyCollection<Expression> original)
-            {
-                return original;
+                Awaiter.MoveNext();
+                Awaiter.Dispose();
             }
         }
     }
 
-    /// <summary>
-    /// A generator with explicitly defined input and output types.
-    /// </summary>
-    /// <typeparam name="TIn"></typeparam>
-    /// <typeparam name="TOut"></typeparam>
-    public class Generator<TIn, TOut> : Generator, IGenerator<TIn, TOut>
+    public class Generator<TIn, TOut> : IGenerator<TIn, TOut>, IDisposable
     {
-        public Generator(IEnumerator<IYield> enm)
-            : base(enm)
-        {
-        }
+        internal IYieldAwaiter<TIn, TOut> Awaiter { get; set; }
 
-        public TOut Send(TIn obj)
+        private readonly IYield<TIn, TOut> _yielder;
+
+        private bool _generatorExhausted;
+
+        public Generator(Func<IYield<TIn, TOut>, Task> meth)
         {
-            return Send<TIn, TOut>(obj);
+            if (meth == null)
+            {
+                throw new ArgumentNullException("meth");
+            }
+            _yielder = new Yielder<TIn, TOut>(this);
+            _generatorExhausted = false;
+            meth(_yielder);
         }
 
         public TOut Next()
         {
-            return Next<TOut>();
+            var objOut = Awaiter.ObjOut;
+            if(!Awaiter.MoveNext())
+            {
+                if (_generatorExhausted)
+                {
+                    //throw new GeneratorExhaustedException();
+                }
+                _generatorExhausted = true;
+            }
+            return objOut;
+        }
+
+        public bool TryNext(out TOut result)
+        {
+            var objOut = Awaiter.ObjOut;
+            if(Awaiter.MoveNext())
+            {
+                result = objOut;
+                return true;
+            }
+            result = default(TOut);
+            return false;
+        }
+
+        public TOut Send(TIn obj)
+        {
+            var objOut = Awaiter.ObjOut;
+            if(!Awaiter.Send(obj))
+            {
+                if (_generatorExhausted)
+                {
+                    throw new GeneratorExhaustedException();
+                }
+                _generatorExhausted = true;
+            }
+            return objOut;
         }
 
         public bool TrySend(TIn obj, out TOut result)
         {
-            return TrySend<TIn, TOut>(obj, out result);
+            var objOut = Awaiter.ObjOut;
+            if (Awaiter.Send(obj))
+            {
+                result = objOut;
+                return true;
+            }
+            result = default(TOut);
+            return false;
+        }
+
+        public IEnumerable<TOut> AsEnumerable()
+        {
+            TOut value;
+            while (TryNext(out value))
+            {
+                yield return value;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (Awaiter != null)
+            {
+                Awaiter.MoveNext();
+                Awaiter.Dispose();
+            }
         }
     }
 }

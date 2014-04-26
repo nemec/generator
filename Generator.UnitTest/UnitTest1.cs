@@ -1,8 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Linq;
 
-namespace Generator.UnitTest
+namespace GeneratorAsync.UnitTest
 {
     [TestClass]
     public class UnitTest1
@@ -17,16 +19,17 @@ namespace Generator.UnitTest
         [TestMethod]
         public void Continue_WithLocalField_SetsField()
         {
-            var gen = Gen.Create(WithLocalField);
-            gen.Send("tim");
-            Assert.AreEqual("tim", gen.Next<string>());
+            using (var gen = new Generator(WithLocalField))
+            {
+                gen.Send("tim");
+                Assert.AreEqual("tim", gen.Next<string>());
+            }
         }
 
-        public IEnumerable<IYield> WithLocalField()
+        public async Task WithLocalField(IYield gen)
         {
-            string name = null;
-            yield return Gen.Yield(() => name);
-            yield return Gen.Yield(name);
+            var name = (string)await gen.Yield();
+            await gen.Yield(name);
         }
 
         private class Outer
@@ -44,62 +47,70 @@ namespace Generator.UnitTest
         [TestMethod]
         public void Continue_WithNestedField_SetsField()
         {
-            var gen = Gen.Create(WithNestedField);
-            gen.Send("tim");
-            Assert.AreEqual("tim", gen.Next<string>());
+            using (var gen = new Generator(WithNestedField))
+            {
+                gen.Send("tim");
+                Assert.AreEqual("tim", gen.Next<string>());
+            }
         }
 
-        public IEnumerable<IYield> WithNestedField()
+        public async Task WithNestedField(IYield gen)
         {
             var data = new Outer { InnerThing = new Outer.Inner() };
-            yield return Gen.Yield(() => data.InnerThing.Field);
-            yield return Gen.Yield(data.InnerThing.Field);
+            data.InnerThing.Field = (string)await gen.Yield();
+            await gen.Yield(data.InnerThing.Field);
         }
 
         [TestMethod]
         public void Continue_WithNestedProperty_SetsField()
         {
-            var gen = Gen.Create(WithNestedProperty);
-            gen.Send("tim");
-            Assert.AreEqual("tim", gen.Next<string>());
+            using (var gen = new Generator(WithNestedProperty))
+            {
+                gen.Send("tim");
+                Assert.AreEqual("tim", gen.Next<string>());
+            }
         }
 
-        public IEnumerable<IYield> WithNestedProperty()
+        public async Task WithNestedProperty(IYield gen)
         {
             var data = new Outer { InnerThing = new Outer.Inner() };
-            yield return Gen.Yield(() => data.InnerThing.Property);
-            yield return Gen.Yield(data.InnerThing.Property);
+            data.InnerThing.Property = (string)await gen.Yield();
+            await gen.Yield(data.InnerThing.Property);
         }
 
 
         [TestMethod]
         public void Continue_WithParameterProperty_SetsParameter()
         {
-            var gen = Gen.Create(WithParameterProperty(new SomeClass()));
-            gen.Send("tim");
-            Assert.AreEqual("tim", gen.Next<string>());
+            using (var gen = new Generator<SomeClass>(WithParameterProperty, new SomeClass()))
+            {
+                gen.Send("tim");
+                Assert.AreEqual("tim", gen.Next<string>());
+            }
         }
 
-        public IEnumerable<IYield> WithParameterProperty(SomeClass param)
+        public async Task WithParameterProperty(IYield gen, SomeClass param)
         {
-            yield return Gen.Yield(() => param.PropertyName);
-            yield return Gen.Yield(param.PropertyName);
+            param.PropertyName = (string)await gen.Yield();
+            await gen.Yield(param.PropertyName);
         }
 
 
         [TestMethod]
         public void Yield_WithIndexer_SetsParameter()
         {
-            var gen = Gen.Create(WithIndexer);
-            gen.Send("tim");
-            Assert.AreEqual("tim", gen.Next<string>());
+            using (var gen = new Generator(WithIndexer))
+            {
+                gen.Send("tim");
+                Assert.AreEqual("tim", gen.Next<string>());
+            }
         }
 
-        public IEnumerable<IYield> WithIndexer()
+        public async Task WithIndexer(IYield gen)
         {
             var data = new Dictionary<string, string>();
-            yield return Gen.Yield(() => data["thing"]);
-            yield return Gen.Yield(data["thing"]);
+            data["thing"] = (string)await gen.Yield();
+            await gen.Yield(data["thing"]);
         }
 
 
@@ -108,15 +119,17 @@ namespace Generator.UnitTest
         [TestMethod]
         public void Yield_WithStaticField_SetsValue()
         {
-            var gen = Gen.Create(WithStaticField);
-            gen.Send("tim");
-            Assert.AreEqual("tim", gen.Next<string>());
+            using (var gen = new Generator(WithStaticField))
+            {
+                gen.Send("tim");
+                Assert.AreEqual("tim", gen.Next<string>());
+            }
         }
 
-        public IEnumerable<IYield> WithStaticField()
+        public async Task WithStaticField(IYield gen)
         {
-            yield return Gen.Yield(() => _staticField);
-            yield return Gen.Yield(_staticField);
+            _staticField = (string)await gen.Yield();
+            await gen.Yield(_staticField);
         }
 
 
@@ -125,15 +138,17 @@ namespace Generator.UnitTest
         [TestMethod]
         public void Yield_WithStaticProperty_SetsValue()
         {
-            var gen = Gen.Create(WithStaticProperty);
-            gen.Send("tim");
-            Assert.AreEqual("tim", gen.Next<string>());
+            using (var gen = new Generator(WithStaticProperty))
+            {
+                gen.Send("tim");
+                Assert.AreEqual("tim", gen.Next<string>());
+            }
         }
 
-        public IEnumerable<IYield> WithStaticProperty()
+        public async Task WithStaticProperty(IYield gen)
         {
-            yield return Gen.Yield(() => StaticProperty);
-            yield return Gen.Yield(StaticProperty);
+            StaticProperty = (string)await gen.Yield();
+            await gen.Yield(StaticProperty);
         }
 
 
@@ -141,16 +156,17 @@ namespace Generator.UnitTest
         [TestMethod]
         public void Yield_WithWellDefinedTypes_SetsValue()
         {
-            var gen = Gen.Create(WithWellDefinedTypes);
-            gen.Send(3);
-            Assert.AreEqual("3", gen.Next());
+            using (var gen = new Generator<int, string>(WithWellDefinedTypes))
+            {
+                gen.Send(3);
+                Assert.AreEqual("3", gen.Next());
+            }
         }
 
-        public IEnumerable<IYield<int, string>> WithWellDefinedTypes()
+        public async Task WithWellDefinedTypes(IYield<int, string> gen)
         {
-            var value = 0;
-            yield return Gen.Yield<int, string>(null, () => value);
-            yield return Gen<int>.Yield(value.ToString());
+            var value = await gen.Yield();
+            await gen.Yield(value.ToString());
         }
 
 
@@ -158,13 +174,49 @@ namespace Generator.UnitTest
         [TestMethod]
         public void Yield_WithValueInFirstYield_ReturnsValue()
         {
-            var gen = Gen.Create(WithValueInFirstYield);
-            Assert.AreEqual("response", gen.Next<string>());
+            using (var gen = new Generator(WithValueInFirstYield))
+            {
+                Assert.AreEqual("response", gen.Next<string>());
+            }
         }
 
-        public IEnumerable<IYield> WithValueInFirstYield()
+        public async Task WithValueInFirstYield(IYield gen)
         {
-            yield return Gen.Yield("response");
+            await gen.Yield("response");
+        }
+
+
+
+        [TestMethod]
+        public void AsEnumerable_WithTenYields_ReturnsCountOfTen()
+        {
+            using (var gen = new Generator(WithTenYields))
+            {
+                var actual = gen.AsEnumerable<string>().Count();
+                Assert.AreEqual(10, actual);
+            }
+        }
+
+        [TestMethod]
+        public void AsEnumerable_WithTenYieldsAndTakingEleven_ReturnsLengthOfTen()
+        {
+            using (var gen = new Generator(WithTenYields))
+            {
+                var actual = gen
+                    .AsEnumerable<string>()
+                    .Take(11)
+                    .ToList()
+                    .Count;
+                Assert.AreEqual(10, actual);
+            }
+        }
+
+        public async Task WithTenYields(IYield gen)
+        {
+            for (var i = 0; i < 10; i++)
+            {
+                await gen.Yield("response");
+            }
         }
     }
 }
